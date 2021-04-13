@@ -5,6 +5,13 @@
 <br><br><br><br><br>
 <br><br><br><br><br>
 
+## OpenSSL fork
+This fork is aimed at adding a layer of OpenSSL so traffic between 
+two devices is appropriately disguised as HTTPS communication.
+There is no attempt to use OpenSSL to add security on top of the
+PEL transport layer already included in Reptile. OpenSSL is used
+solely to disguise traffic.
+
 ## Tested on
 
 **Debian 9**: 4.9.0-8-amd64<br>
