@@ -4,10 +4,11 @@ INCLUDES+=-I../include
 RM=rm -rf
 BUILD_DIR?=$(PWD)/output
 DEP_SRC=../crypto/aes.c ../crypto/sha1.c ../transport/pel.c
+ORIG_DEP_SRC=../crypto/aes.c ../crypto/sha1.c ../transport/pel_orig.c
 
 # Rules
 
-all: openssl_client openssl_server pel_client pel_server select_client select_server
+all: openssl_client openssl_server pel_client pel_server select_client select_server pelorig_client pelorig_server
 
 # Those binaries will stay in the victim machine
 
@@ -34,6 +35,14 @@ select_client: build_dir
 select_server: build_dir
 	@ echo "  CC      $(BUILD_DIR)/select_server "
 	@ $(CC) select_server.c $(DEP_SRC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) -o $(BUILD_DIR)/select_server -lssl -lcrypto
+
+pelorig_client: build_dir
+	@ echo "  CC      $(BUILD_DIR)/pelorig_client"
+	@ $(CC) pelorig_client.c $(ORIG_DEP_SRC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) -o $(BUILD_DIR)/pelorig_client -lssl -lcrypto
+
+pelorig_server: build_dir
+	@ echo "  CC      $(BUILD_DIR)/pelorig_server "
+	@ $(CC) pelorig_server.c $(ORIG_DEP_SRC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) -o $(BUILD_DIR)/pelorig_server -lssl -lcrypto
 
 
 .PHONY : clean
