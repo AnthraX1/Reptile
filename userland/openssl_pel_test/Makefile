@@ -7,7 +7,7 @@ DEP_SRC=../crypto/aes.c ../crypto/sha1.c ../transport/pel.c
 
 # Rules
 
-all: openssl_client openssl_server pel_client pel_server
+all: openssl_client openssl_server pel_client pel_server select_client select_server
 
 # Those binaries will stay in the victim machine
 
@@ -26,6 +26,15 @@ pel_client: build_dir
 pel_server: build_dir
 	@ echo "  CC      $(BUILD_DIR)/pel_server "
 	@ $(CC) pel_server.c $(DEP_SRC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) -o $(BUILD_DIR)/pel_server -lssl -lcrypto
+
+select_client: build_dir
+	@ echo "  CC      $(BUILD_DIR)/select_client"
+	@ $(CC) select_client.c $(DEP_SRC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) -o $(BUILD_DIR)/select_client -lssl -lcrypto
+
+select_server: build_dir
+	@ echo "  CC      $(BUILD_DIR)/select_server "
+	@ $(CC) select_server.c $(DEP_SRC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) -o $(BUILD_DIR)/select_server -lssl -lcrypto
+
 
 .PHONY : clean
 
