@@ -229,7 +229,7 @@ openssl_conn *openssl_get_conn(const openssl_ctx *ctx) {
 
 const char *openssl_get_peer_name(openssl_ctx *ctx) {
 	if (!ctx) {
-		return NULL;
+		return "invalid-ctx";
 	}
 
 	if (ctx->type == OPENSSL_SERVER && ctx->server._client_bio) {
@@ -238,12 +238,12 @@ const char *openssl_get_peer_name(openssl_ctx *ctx) {
 		return BIO_get_peer_name(ctx->client._server_bio);
 	}
     
-	return NULL;
+	return "invalid-ctx";
 }
 
 const char *openssl_get_peer_port(openssl_ctx *ctx) {
 	if (!ctx) {
-		return NULL;
+		return "invalid-ctx";
 	}
 
 	if (ctx->type == OPENSSL_SERVER && ctx->server._client_bio) {
@@ -252,7 +252,7 @@ const char *openssl_get_peer_port(openssl_ctx *ctx) {
 		return BIO_get_accept_port(ctx->client._server_bio);
 	}
     
-	return NULL;
+	return "invalid-ctx";
 }
 
 int openssl_get_fd(openssl_ctx *ctx) {
@@ -629,7 +629,9 @@ int pel_recv_msg(openssl_ctx *ctx, unsigned char *msg, int *length)
 		memcpy(recv_ctx.LCT, temp, 16);
 	}
 
-	memcpy(msg, &buffer[2], *length);
+	// Note: must use memmove since pel init functions pass 
+	//		 the global buffer as "msg" to this function.
+	memmove(msg, &buffer[2], *length);
 
 	pel_errno = PEL_UNDEFINED_ERROR;
 
