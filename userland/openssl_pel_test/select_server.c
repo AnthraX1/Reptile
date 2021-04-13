@@ -85,13 +85,8 @@ int main(int argc, char **argv) {
                 goto cleanup;
 			}
 
-            char buffer[BUFSIZE + 64]  ={0};
-            int sendlen = snprintf(buffer, sizeof(buffer), "Recv(%d bytes): %s\n", len, (char *) message);
-
-			if (write(1, buffer, sendlen) != sendlen) {
-				perror("write");
-				goto cleanup;
-			}
+            message[len] = '\0';
+            printf("Recv(%d bytes): %s\n", len, (char *) message);
 		}
 
         if (FD_ISSET(0, &rd)) {
@@ -99,6 +94,8 @@ int main(int argc, char **argv) {
 				perror("read");
 				goto cleanup;
 			}
+
+            message[len] = '\0';
 
 			if (len == 0) {
 				fprintf(stderr, "stdin: end-of-file\n");
