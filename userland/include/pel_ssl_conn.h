@@ -105,7 +105,7 @@ bool openssl_server_init(openssl_ctx *ctx, int port,
  * @param[in] ctx the OpenSSL server context.
  * @return true if successful, else false.
  */
-bool openssl_server_accept(openssl_ctx *ctx);
+openssl_conn *openssl_server_accept(openssl_ctx *ctx);
 
 /**
  * Initializes the PEL module as an OpenSSL client.
@@ -122,45 +122,39 @@ bool openssl_client_init(openssl_ctx *ctx, const char *cert_filename);
  * @param[in, out] ctx the openssl client context.
  * @param[in] hostname the host to connect to.
  * @param port the host port to connect to.
- * @return true if successful, else false.
+ * @return NULL if there's an error, else a connection to the server.
  */
-bool openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port);
-
-/**
- * Returns the connection currently associated with the given
- * context.
- * 
- * @param[in] ctx the context to retrieve a connection from.
- * @return the current connection (or NULL if not connected).
- */
-openssl_conn *openssl_get_conn(const openssl_ctx *ctx);
+openssl_conn *openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port);
 
 /**
  * Returns the peer name for the given connection.
  * 
- * @param[in] ctx the context associated with the connection to
- *                retrieve the peer name for.
+ * @param[in] conn the connection to retrieve the peer name for.
  * @return the peer name or NULL if unavailable.
  */
-const char *openssl_get_peer_name(openssl_ctx *ctx);
+static inline const char *openssl_get_peer_name(openssl_conn *conn) {
+    return BIO_get_peer_name(conn);
+}
 
 /**
  * Returns the port for the given connection.
  * 
- * @param[in] ctx the context associated with the connection to
- *                retrieve the port for.
+ * @param[in] conn the connection to retrieve the port for.
  * @return the port or NULL if unavailable.
  */
-const char *openssl_get_peer_port(openssl_ctx *ctx);
+static inline const char *openssl_get_peer_port(openssl_conn *conn) {
+    return BIO_get_accept_port(conn);
+}
 
 /**
  * Returns the underlying file descriptor for a given connection.
  * 
- * @param[in] ctx the context associated with the connection to
- *                retrieve the FD for.
+ * @param[in] conn the connection to retrieve the FD for.
  * @return the FD or -1 if unavailable.
  */
-int openssl_get_fd(openssl_ctx *ctx);
+static inline int openssl_get_fd(openssl_conn *conn) {
+    return BIO_get_fd(conn, NULL);
+}
 
 /**
  * Performs PEL handshaking with the given client.
@@ -168,11 +162,11 @@ int openssl_get_fd(openssl_ctx *ctx);
  * Note: the language is somewhat confusing to me; this call seems to be 
  *       from the network "server" to the network "client".
  * 
- * @param[in] ctx the context associated with an accepted connection.
+ * @param[in] client_conn the accepted client connection.
  * @param[in] key the crypto key for the underlying PEL encryption layer.
  * @return PEL_SUCCESS if successful, else PEL_FAILURE
  */
-int pel_client_init(openssl_ctx *ctx, char *key);
+int pel_client_init(openssl_conn *client_conn, char *key);
 
 /**
  * Performs PEL handshaking with the given server.
@@ -180,15 +174,15 @@ int pel_client_init(openssl_ctx *ctx, char *key);
  * Note: the language is somewhat confusing to me; this call seems to be 
  *       from the network "client" to the network "server".
  * 
- * @param[in] ctx the context associated a connected server.
+ * @param[in] server_conn the server connection.
  * @param[in] key the crypto key for the underlying PEL encryption layer.
  * @return PEL_SUCCESS if successful, else PEL_FAILURE
  */
-int pel_server_init(openssl_ctx *ctx, char *key);
+int pel_server_init(openssl_conn *server_conn, char *key);
 
 /** Methods for formatted, encrypted message transport. */
-int pel_send_msg(openssl_ctx *ctx, unsigned char *msg, int  length);
-int pel_recv_msg(openssl_ctx *ctx, unsigned char *msg, int *length);
+int pel_send_msg(openssl_conn *conn, unsigned char *msg, int  length);
+int pel_recv_msg(openssl_conn *conn, unsigned char *msg, int *length);
 
 /** Methods for underlying OpenSSL transport. */
 int pel_send_all(openssl_conn *conn, void *buf, size_t len);
