@@ -19,6 +19,10 @@
 
 extern int pel_errno;
 
+/* OpenSSL ~~additions~~ hacks by Cameron Kluza.
+ * Credit to https://quuxplusone.github.io/blog/2020/01/24/openssl-part-1/
+ * for a great practical resource to see how to use libssl. */
+
 /**
  * Class data for OpenSSL. 
  * Note: For simplicity, this only supports one ongoing connection
