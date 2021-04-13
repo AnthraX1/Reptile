@@ -95,21 +95,21 @@ bool openssl_server_init(openssl_ctx *ctx, int port,
 	return true;
 }
 
-bool openssl_server_accept(openssl_ctx *ctx) {
+openssl_conn *openssl_server_accept(openssl_ctx *ctx) {
 	if (!ctx || ctx->type != OPENSSL_SERVER || !(ctx->ssl_ctx) || !(ctx->server.accept_bio)) {
 		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
-		return false;
+		return NULL;
 	}
 
 	if (BIO_do_accept(ctx->server.accept_bio) <= 0) {
 		openssl_print_errors("Couldn't do accept");
-		return false;
+		return NULL;
 	}
 
 	openssl_conn *conn = BIO_pop(ctx->server.accept_bio);
 	if (!conn) {
 		openssl_print_errors("BIO was empty after accepting");
-		return false;
+		return NULL;
 	}
 
 	/* Store the new connection. */
@@ -120,7 +120,7 @@ bool openssl_server_accept(openssl_ctx *ctx) {
 		openssl_print_errors("Couldn't create new SSL BIO filter");
 		openssl_conn_delete(conn);
 		ctx->server._client_bio = NULL;
-		return false;
+		return NULL;
 	}
 
 	BIO_push(tmp, conn);
@@ -129,7 +129,8 @@ bool openssl_server_accept(openssl_ctx *ctx) {
 	 * most IO. */
 	ctx->server.ssl_client_bio = tmp;
 
-	return true;
+	/* Redundant */
+	return tmp;
 }
 
 bool openssl_client_init(openssl_ctx *ctx, const char *cert_filename) {
@@ -153,7 +154,7 @@ bool openssl_client_init(openssl_ctx *ctx, const char *cert_filename) {
 	return true;
 }
 
-bool openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port) {
+openssl_conn *openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port) {
 	/* TODO(CMK): fixed size buffer could fail. */
 	char connect_addr[128] = {0};
 	snprintf(connect_addr, sizeof(connect_addr), "%s:%d", hostname, port);
@@ -161,33 +162,25 @@ bool openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port) {
 	BIO *conn_bio = BIO_new_connect(connect_addr);
 	if (!conn_bio) {
 		openssl_print_errors("Couldn't create client connect BIO");
-		return false;
+		return NULL;
 	}
 
 	if (BIO_do_connect(conn_bio) <= 0) {
 		openssl_print_errors("Couldn't do client connect");
-		openssl_conn_delete(conn_bio);
-		return false;
+		BIO_free_all(conn_bio);
+		return NULL;
 	}
-
-	/* Store the new connection. */
-	ctx->client._server_bio = conn_bio;
 
 	BIO *ssl_bio = BIO_new_ssl(ctx->ssl_ctx, OPENSSL_CLIENT);
 	if (!ssl_bio) {
 		openssl_print_errors("Couldn't create client SSL BIO");
-		openssl_conn_delete(conn_bio);
-		ctx->client._server_bio = NULL;
-		return false;
+		BIO_free_all(conn_bio);
+		return NULL;
 	}
 
 	BIO_push(ssl_bio, conn_bio);
-
-	/* The SSL filter is now in front of the connection BIO; store that for
-	 * most IO. */
-	ctx->client.ssl_server_bio = ssl_bio;
-	
-	return true;
+	ctx->client.server_bio = ssl_bio;
+	return ssl_bio;
 }
 
 void openssl_ctx_cleanup(openssl_ctx *ctx) {
@@ -199,12 +192,9 @@ void openssl_ctx_cleanup(openssl_ctx *ctx) {
 		if (ctx->server.accept_bio) {
 			BIO_free_all(ctx->server.accept_bio);
 		}
-		if (ctx->server.ssl_client_bio) {
-			BIO_free_all(ctx->server.ssl_client_bio);
-		}
 	} else {
-		if (ctx->client.ssl_server_bio) {
-			BIO_free_all(ctx->client.ssl_server_bio);
+		if (ctx->client.server_bio) {
+			BIO_free_all(ctx->client.server_bio);
 		}
 	}
 
@@ -213,78 +203,14 @@ void openssl_ctx_cleanup(openssl_ctx *ctx) {
 	}
 }
 
-openssl_conn *openssl_get_conn(const openssl_ctx *ctx) {
-	if (!ctx) {
-		return NULL;
-	}
-
-	if (ctx->type == OPENSSL_SERVER) {
-		return ctx->server.ssl_client_bio;
-	} else if (ctx->type == OPENSSL_CLIENT) {
-		return ctx->client.ssl_server_bio;
-	}
-
-	return NULL;
-}
-
-const char *openssl_get_peer_name(openssl_ctx *ctx) {
-	if (!ctx) {
-		return NULL;
-	}
-
-	if (ctx->type == OPENSSL_SERVER && ctx->server._client_bio) {
-		return BIO_get_peer_name(ctx->server._client_bio);
-	} else if (ctx->type == OPENSSL_CLIENT && ctx->client._server_bio) {
-		return BIO_get_peer_name(ctx->client._server_bio);
-	}
-    
-	return NULL;
-}
-
-const char *openssl_get_peer_port(openssl_ctx *ctx) {
-	if (!ctx) {
-		return NULL;
-	}
-
-	if (ctx->type == OPENSSL_SERVER && ctx->server._client_bio) {
-		return BIO_get_accept_port(ctx->server._client_bio);
-	} else if (ctx->type == OPENSSL_CLIENT && ctx->client._server_bio) {
-		return BIO_get_accept_port(ctx->client._server_bio);
-	}
-    
-	return NULL;
-}
-
-int openssl_get_fd(openssl_ctx *ctx) {
-	if (!ctx) {
-		return -1;
-	}
-
-	if (ctx->type == OPENSSL_SERVER && ctx->server._client_bio) {
-		return BIO_get_fd(ctx->server._client_bio, NULL);
-	} else if (ctx->type == OPENSSL_CLIENT && ctx->client._server_bio) {
-		return BIO_get_fd(ctx->client._server_bio, NULL);
-	}
-    
-	return -1;
-}
-
 /* session setup - client side */
 
-int pel_client_init(openssl_ctx *ctx, char *key)
+int pel_client_init(openssl_conn *client_conn, char *key)
 {
 	int ret, len, pid;
 	struct timeval tv;
 	struct sha1_context sha1_ctx;
 	unsigned char IV1[20], IV2[20];
-
-	if (!ctx || ctx->type != OPENSSL_SERVER || !(ctx->server.ssl_client_bio)) {
-		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
-		pel_errno = PEL_UNDEFINED_ERROR;
-		return PEL_FAILURE;
-	}
-
-	openssl_conn *client_conn = ctx->server.ssl_client_bio;
 
 	/* generate both initialization vectors */
 
@@ -332,14 +258,14 @@ int pel_client_init(openssl_ctx *ctx, char *key)
 
 	/* handshake - encrypt and send the client's challenge */
 
-	ret = pel_send_msg(ctx, challenge, 16);
+	ret = pel_send_msg(client_conn, challenge, 16);
 
 	if (ret != PEL_SUCCESS)
 		return (PEL_FAILURE);
 
 	/* handshake - decrypt and verify the server's challenge */
 
-	ret = pel_recv_msg(ctx, buffer, &len);
+	ret = pel_recv_msg(client_conn, buffer, &len);
 
 	if (ret != PEL_SUCCESS)
 		return (PEL_FAILURE);
@@ -357,18 +283,10 @@ int pel_client_init(openssl_ctx *ctx, char *key)
 
 /* session setup - server side */
 
-int pel_server_init(openssl_ctx *ctx, char *key)
+int pel_server_init(openssl_conn *server_conn, char *key)
 {
 	int ret, len;
 	unsigned char IV1[20], IV2[20];
-
-	if (!ctx || ctx->type != OPENSSL_CLIENT || !(ctx->client.ssl_server_bio)) {
-		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
-		pel_errno = PEL_UNDEFINED_ERROR;
-		return PEL_FAILURE;
-	}	
-
-	openssl_conn *server_conn = ctx->client.ssl_server_bio;
 
 	/* get the IVs from the client */
 
@@ -387,7 +305,7 @@ int pel_server_init(openssl_ctx *ctx, char *key)
 
 	/* handshake - decrypt and verify the client's challenge */
 
-	ret = pel_recv_msg(ctx, buffer, &len);
+	ret = pel_recv_msg(server_conn, buffer, &len);
 
 	if (ret != PEL_SUCCESS)
 		return (PEL_FAILURE);
@@ -400,7 +318,7 @@ int pel_server_init(openssl_ctx *ctx, char *key)
 
 	/* handshake - encrypt and send the server's challenge */
 
-	ret = pel_send_msg(ctx, challenge, 16);
+	ret = pel_send_msg(server_conn, challenge, 16);
 
 	if (ret != PEL_SUCCESS)
 		return (PEL_FAILURE);
@@ -440,18 +358,11 @@ static void pel_setup_context(struct pel_context *pel_ctx, char *key,
 
 /* encrypt and transmit a message */
 
-int pel_send_msg(openssl_ctx *ctx, unsigned char *msg, int length)
+int pel_send_msg(openssl_conn *conn, unsigned char *msg, int length)
 {
 	unsigned char digest[20];
 	struct sha1_context sha1_ctx;
 	int i, j, ret, blk_len;
-
-	openssl_conn *conn = openssl_get_conn(ctx);
-	if (!conn) {
-		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
-		pel_errno = PEL_UNDEFINED_ERROR;
-		return PEL_FAILURE;
-	}
 
 	/* verify the message length */
 
@@ -525,20 +436,13 @@ int pel_send_msg(openssl_ctx *ctx, unsigned char *msg, int length)
 
 /* receive and decrypt a message */
 
-int pel_recv_msg(openssl_ctx *ctx, unsigned char *msg, int *length)
+int pel_recv_msg(openssl_conn *conn, unsigned char *msg, int *length)
 {
 	unsigned char temp[16];
 	unsigned char hmac[20];
 	unsigned char digest[20];
 	struct sha1_context sha1_ctx;
 	int i, j, ret, blk_len;
-
-	openssl_conn *conn = openssl_get_conn(ctx);
-	if (!conn) {
-		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
-		pel_errno = PEL_UNDEFINED_ERROR;
-		return PEL_FAILURE;
-	}
 
 	/* receive the first encrypted block */
 

