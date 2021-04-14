@@ -17,6 +17,10 @@
 
 #define ERROR 		-1
 
+#ifndef NAME
+#error NAME not defined
+#endif
+
 unsigned char message[BUFSIZE + 1];
 extern char *optarg;
 char *rcfile;
@@ -305,7 +309,7 @@ int build_certfile_path(void)
 	if (certfile == NULL)
 		return -1;
 
-	snprintf(NULL, len, "/%s/%s_cert.pem", NAME, NAME);
+	snprintf(certfile, len, "/%s/%s_cert.pem", NAME, NAME);
 	return 0;
 }
 

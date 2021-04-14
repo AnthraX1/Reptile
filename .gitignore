@@ -1,1 +1,5 @@
 .vscode/
+*.o
+*.config*
+output/
+scripts/kconfig/
