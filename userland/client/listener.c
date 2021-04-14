@@ -81,6 +81,11 @@ void pel_error(char *s)
 		fprintf(stderr, "%s %s: No error.\n", bad, s);
 		break;
 
+	case PEL_OPENSSL_ERROR:
+		fprintf(stderr, "%s", bad);
+		openssl_print_errors(s);
+		break;
+
 	default:
 		fprintf(stderr, "%s %s: Unknown error code.\n", bad, s);
 		break;
@@ -718,12 +723,17 @@ void listener(int port)
 		fatal("openssl_ctx_new");
 	}
 
+	printf("%s Using certificate and private key files:\n\t%s\n\t%s\n", 
+		good, CERT_FILENAME, PRIV_KEY_FILENAME);
+
 	if (!openssl_server_init(m_openssl_server, port, CERT_FILENAME, PRIV_KEY_FILENAME)) {
 		kill(pid, SIGQUIT);
 		openssl_ctx_delete(m_openssl_server);
 		m_openssl_server = NULL;
 		fatal("openssl_server_init");
 	}
+
+	printf("%s Listening on port %d\n", good, port);
 
 	/* Step 2: accept the incoming connection. */
 	if (!openssl_server_accept(m_openssl_server)) {
@@ -752,6 +762,8 @@ void listener(int port)
 
 	banner();
 	reptile_loop(m_openssl_server);
+
+	printf("%s reptile loop finished\n", good);
 
 	openssl_ctx_delete(m_openssl_server);
 }
