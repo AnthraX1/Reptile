@@ -114,7 +114,7 @@ void no_help()
 
 int help(openssl_ctx *ctx, char **args)
 {
-	if (args[0] == NULL && ctx == -1)
+	if (args[0] == NULL && ctx == NULL)
 		return 1;
 
 	if (args[1] != NULL) {
@@ -151,7 +151,7 @@ int help(openssl_ctx *ctx, char **args)
 
 int __exit(openssl_ctx *ctx, char **args)
 {
-	if (args[0] == NULL && ctx == -1)
+	if (args[0] == NULL && ctx == NULL)
 		return 1;
 
 	pel_send_msg(ctx, (unsigned char *)EXIT, EXIT_LEN);
@@ -709,9 +709,7 @@ void handle_shutdown(int signal)
 
 void listener(int port)
 {
-	int new_sockfd, yes = 1;
-	struct sockaddr_in host_addr, client_addr;
-	socklen_t sin_size;
+	struct sockaddr_in host_addr;
 	
 	/* Step 1: create the OpenSSL context and initialize a TLS server. */
 	m_openssl_server = openssl_ctx_new();
