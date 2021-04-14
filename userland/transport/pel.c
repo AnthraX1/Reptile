@@ -550,7 +550,6 @@ int pel_recv_msg(openssl_ctx *ctx, unsigned char *msg, int *length)
 	openssl_conn *conn = openssl_get_conn(ctx);
 	if (!conn) {
 		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
-		fprintf(stdout, "%s: invalid argument(s)\n", __func__);
 		pel_errno = PEL_UNDEFINED_ERROR;
 		return PEL_FAILURE;
 	}
@@ -697,7 +696,11 @@ int pel_recv_all(openssl_conn *conn, void *buf, size_t len)
 				continue;
 			}
 
-			pel_errno = PEL_OPENSSL_ERROR;
+			/* From the manpage:
+			 * 	"For example if a call to BIO_read() on a socket BIO returns 0 
+			 *	 and BIO_should_retry() is false then the cause will be that 
+			 *	 the connection closed." */
+			pel_errno = PEL_CONN_CLOSED;
 			return (PEL_FAILURE);
 		}
 
@@ -744,7 +747,6 @@ const char *pel_strerror(int pel_err)
 void openssl_print_errors(const char *msg) {
 	fprintf(stderr, "%s\n", msg);
 	ERR_print_errors_fp(stderr);
-	exit(-1);
 }
 
 static void openssl_common_init(void) {
@@ -755,10 +757,10 @@ static void openssl_common_init(void) {
 	OPENSSL_init_ssl(0, NULL);
 #endif
 	
-#ifdef DEBUG
+// #ifdef DEBUG
 	// support error strings when using OpenSSL's built-ins
 	SSL_load_error_strings();
-#endif
+// #endif
 }
 
 static SSL_CTX *openssl_get_context(void) {

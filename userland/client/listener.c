@@ -82,7 +82,7 @@ void pel_error(char *s)
 		break;
 
 	case PEL_OPENSSL_ERROR:
-		fprintf(stderr, "%s", bad);
+		fprintf(stderr, "%s ", bad);
 		openssl_print_errors(s);
 		break;
 
