@@ -16,6 +16,7 @@
 #define PEL_BAD_MSG_LENGTH      -4
 #define PEL_CORRUPTED_DATA      -5
 #define PEL_UNDEFINED_ERROR     -6
+#define PEL_OPENSSL_ERROR       -7
 
 extern int pel_errno;
 
@@ -53,6 +54,9 @@ typedef struct openssl_ctx {
 
 /** A remote socket type. */
 typedef BIO openssl_conn;
+
+/* Convenience function to print a message, print OpenSSL errors. */
+void openssl_print_errors(const char *msg);
 
 /**
  * Creates a new OpenSSL context and initializes it with default data.

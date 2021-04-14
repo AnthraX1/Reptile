@@ -50,9 +50,6 @@ static unsigned char buffer[BUFSIZE + 16 + 20];
 static void pel_setup_context(struct pel_context *pel_ctx, char *key,
 		       unsigned char IV[20]);
 
-/* Convenience function to print a message, print OpenSSL errors. */
-static void openssl_print_errors(const char *msg);
-
 /* Common OpenSSL initialization. */
 static void openssl_common_init(void);
 
@@ -72,6 +69,7 @@ bool openssl_server_init(openssl_ctx *ctx, int port,
                          const char *cert_filename, const char *priv_key_filename) {
     if (!ctx || port > 0xFFFF || !cert_filename || !priv_key_filename) {
 		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
+		pel_errno = PEL_UNDEFINED_ERROR;
 		return false;
 	}
 
@@ -80,35 +78,42 @@ bool openssl_server_init(openssl_ctx *ctx, int port,
 	openssl_common_init();
 	ctx->ssl_ctx = openssl_get_context();
 	if (!(ctx->ssl_ctx)) {
+		pel_errno = PEL_OPENSSL_ERROR;
 		return false;
 	}
 
 	if (!openssl_server_configure(ctx->ssl_ctx, cert_filename, priv_key_filename)) {
+		pel_errno = PEL_OPENSSL_ERROR;
 		return false;
 	}
 
 	ctx->server.accept_bio = openssl_get_accept_bio(port);
 	if (!(ctx->server.accept_bio)) {
+		pel_errno = PEL_OPENSSL_ERROR;
 		return false;
 	}
 
+	pel_errno = PEL_UNDEFINED_ERROR;
 	return true;
 }
 
 bool openssl_server_accept(openssl_ctx *ctx) {
 	if (!ctx || ctx->type != OPENSSL_SERVER || !(ctx->ssl_ctx) || !(ctx->server.accept_bio)) {
 		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
+		pel_errno = PEL_UNDEFINED_ERROR;
 		return false;
 	}
 
 	if (BIO_do_accept(ctx->server.accept_bio) <= 0) {
-		openssl_print_errors("Couldn't do accept");
+		// openssl_print_errors("Couldn't do accept");
+		pel_errno = PEL_OPENSSL_ERROR;
 		return false;
 	}
 
 	openssl_conn *conn = BIO_pop(ctx->server.accept_bio);
 	if (!conn) {
-		openssl_print_errors("BIO was empty after accepting");
+		// openssl_print_errors("BIO was empty after accepting");
+		pel_errno = PEL_OPENSSL_ERROR;
 		return false;
 	}
 
@@ -117,7 +122,8 @@ bool openssl_server_accept(openssl_ctx *ctx) {
 
 	BIO *tmp = BIO_new_ssl(ctx->ssl_ctx, OPENSSL_SERVER);
 	if (!tmp) {
-		openssl_print_errors("Couldn't create new SSL BIO filter");
+		// openssl_print_errors("Couldn't create new SSL BIO filter");
+		pel_errno = PEL_OPENSSL_ERROR;
 		openssl_conn_delete(conn);
 		ctx->server._client_bio = NULL;
 		return false;
@@ -129,6 +135,7 @@ bool openssl_server_accept(openssl_ctx *ctx) {
 	 * most IO. */
 	ctx->server.ssl_client_bio = tmp;
 
+	pel_errno = PEL_UNDEFINED_ERROR;
 	return true;
 }
 
@@ -143,13 +150,16 @@ bool openssl_client_init(openssl_ctx *ctx, const char *cert_filename) {
 	openssl_common_init();
 	ctx->ssl_ctx = openssl_get_context();
 	if (!(ctx->ssl_ctx)) {
+		pel_errno = PEL_OPENSSL_ERROR;
 		return false;
 	}
 
 	if (!openssl_client_configure(ctx->ssl_ctx, cert_filename)) {
+		pel_errno = PEL_OPENSSL_ERROR;
 		return false;
 	}
 
+	pel_errno = PEL_UNDEFINED_ERROR;
 	return true;
 }
 
@@ -160,12 +170,14 @@ bool openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port) {
 
 	BIO *conn_bio = BIO_new_connect(connect_addr);
 	if (!conn_bio) {
-		openssl_print_errors("Couldn't create client connect BIO");
+		pel_errno = PEL_OPENSSL_ERROR;
+		// openssl_print_errors("Couldn't create client connect BIO");
 		return false;
 	}
 
 	if (BIO_do_connect(conn_bio) <= 0) {
-		openssl_print_errors("Couldn't do client connect");
+		// openssl_print_errors("Couldn't do client connect");
+		pel_errno = PEL_OPENSSL_ERROR;
 		openssl_conn_delete(conn_bio);
 		return false;
 	}
@@ -175,7 +187,8 @@ bool openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port) {
 
 	BIO *ssl_bio = BIO_new_ssl(ctx->ssl_ctx, OPENSSL_CLIENT);
 	if (!ssl_bio) {
-		openssl_print_errors("Couldn't create client SSL BIO");
+		// openssl_print_errors("Couldn't create client SSL BIO");
+		pel_errno = PEL_OPENSSL_ERROR;
 		openssl_conn_delete(conn_bio);
 		ctx->client._server_bio = NULL;
 		return false;
@@ -187,6 +200,7 @@ bool openssl_client_connect(openssl_ctx *ctx, const char *hostname, int port) {
 	 * most IO. */
 	ctx->client.ssl_server_bio = ssl_bio;
 	
+	pel_errno = PEL_UNDEFINED_ERROR;
 	return true;
 }
 
@@ -536,6 +550,7 @@ int pel_recv_msg(openssl_ctx *ctx, unsigned char *msg, int *length)
 	openssl_conn *conn = openssl_get_conn(ctx);
 	if (!conn) {
 		fprintf(stderr, "%s: invalid argument(s)\n", __func__);
+		fprintf(stdout, "%s: invalid argument(s)\n", __func__);
 		pel_errno = PEL_UNDEFINED_ERROR;
 		return PEL_FAILURE;
 	}
@@ -654,7 +669,7 @@ int pel_send_all(openssl_conn *conn, void *buf, size_t len)
 				continue;
 			}
 
-			pel_errno = PEL_SYSTEM_ERROR;
+			pel_errno = PEL_OPENSSL_ERROR;
 			return (PEL_FAILURE);
 		}
 
@@ -682,7 +697,7 @@ int pel_recv_all(openssl_conn *conn, void *buf, size_t len)
 				continue;
 			}
 
-			pel_errno = PEL_SYSTEM_ERROR;
+			pel_errno = PEL_OPENSSL_ERROR;
 			return (PEL_FAILURE);
 		}
 
@@ -718,12 +733,15 @@ const char *pel_strerror(int pel_err)
 	case PEL_UNDEFINED_ERROR:
 		return "No error";
 
+	case PEL_OPENSSL_ERROR:
+		return "OpenSSL error";
+
 	default:
 		return "Unknown error code";
 	}
 }
 
-static void openssl_print_errors(const char *msg) {
+void openssl_print_errors(const char *msg) {
 	fprintf(stderr, "%s\n", msg);
 	ERR_print_errors_fp(stderr);
 	exit(-1);
