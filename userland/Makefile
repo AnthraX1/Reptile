@@ -12,8 +12,8 @@ include ../.config
 
 shell: CFLAGS+=-DNAME=\"$(HIDE)\" -DAUTH=$(AUTH) -DHTUA=$(HTUA)
 cmd: CFLAGS+=-DAUTH=$(AUTH) -DHTUA=$(HTUA)
-cmd: CFLAGS+=-DCERT_FILENAME=$(PWD)/transport/server-certificate.pem
-cmd: CFLAGS+=-DPRIV_KEY_FILENAME=$(PWD)/transport/server-private-key.pem
+listener: CFLAGS+=-DCERT_FILENAME=\"$(PWD)/transport/server-certificate.pem\"
+listener: CFLAGS+=-DPRIV_KEY_FILENAME=\"$(PWD)/transport/server-private-key.pem\"
 
 # Rules
 
