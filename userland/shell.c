@@ -174,8 +174,6 @@ int runshell(openssl_ctx *ctx)
 	}
 
 	if (pid == 0) {
-		//close(client);
-		// openssl_ctx_delete(ctx); // TODO(CMK): inappropriate?
 		close(pty);
 
 		if (setsid() < 0) {
