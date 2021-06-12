@@ -2,7 +2,7 @@ CC := gcc
 RM = rm -rf
 SHELL := /bin/bash
 PWD := $(shell pwd)
-include $(PWD)/.config
+-include $(PWD)/.config
 ifeq ($(KERNEL_VERSION),"")
 KERNEL := /lib/modules/$(shell uname -r)/build
 else
