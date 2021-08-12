@@ -7,7 +7,7 @@ workdir /Reptile
 
 # RUN yum groupinstall "Development tools" -y
 RUN yum install make gcc-c++ git ncurses-devel openssl-devel -y
-# RUN git clone https://github.com/AnthraX1/Reptile.git
+RUN git clone https://github.com/AnthraX1/Reptile.git -b docker
 COPY . $WORKDIR
 RUN make clean 
 RUN cp configs/defconfig .config
