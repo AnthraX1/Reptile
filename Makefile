@@ -2,11 +2,9 @@ CC := gcc
 RM = rm -rf
 SHELL := /bin/bash
 PWD := $(shell pwd)
-include $(PWD)/.config
-ifeq ($(KERNEL_VERSION),"")
+-include $(PWD)/.config
+ifeq ($(KERNEL),"")
 KERNEL := /lib/modules/$(shell uname -r)/build
-else
-KERNEL := /lib/modules/$(KERNEL_VERSION)/build
 endif
 CLIENT_DIR ?= $(PWD)/userland
 CONFIG_SCRIPT ?= $(PWD)/scripts/kconfig/config.sh

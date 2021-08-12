@@ -29,8 +29,8 @@ config INSTALL_DIR
     string "Default install dir"
     default "/reptile"
 
-config KERNEL_VERSION
-    string "Build for kernel version. Leave empty to use ${uname -r}"
+config KERNEL
+    string "Kernel headers dir. Leave empty to use /lib/modules/${uname -r}"
     default ""
 
 config CONFIG_FILE_TAMPERING

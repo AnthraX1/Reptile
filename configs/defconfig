@@ -24,7 +24,7 @@ CONFIG_FILE_TAMPERING=y
 # Name used in file tampering tags
 #
 TAG_NAME="reptile"
-
+KERNEL="/usr/include"
 #
 # END
 #
